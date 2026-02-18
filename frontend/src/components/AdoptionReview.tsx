@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+// import { useNavigate } from 'react-router-dom';
 import { adoptionsService } from '../services/adoptionsService';
 import { Adoption, AdoptionStatus, AdoptionStats } from '../types/adoption';
 
 const AdoptionReview: React.FC = () => {
-  const navigate = useNavigate();
+  // const navigate = useNavigate();
   const [adoptions, setAdoptions] = useState<Adoption[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -65,10 +65,10 @@ const AdoptionReview: React.FC = () => {
     return stats;
   };
 
-  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement, Event>): void => {
-    const target = e.target as HTMLImageElement;
-    target.src = 'https://via.placeholder.com/60x60/f0f0f0/999?text=🌟';
-  };
+  // const handleImageError = (e: React.SyntheticEvent<HTMLImageElement, Event>): void => {
+  //   const target = e.target as HTMLImageElement;
+  //   target.src = 'https://via.placeholder.com/60x60/f0f0f0/999?text=🌟';
+  // };
 
   if (loading) {
     return (

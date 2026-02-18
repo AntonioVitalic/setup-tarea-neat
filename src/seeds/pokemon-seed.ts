@@ -1,5 +1,7 @@
 import { db } from '../config/firebase.js';
 import { Pokemon, PokemonNames, PokemonStatus } from '../models/Pokemon.js';
+import { pathToFileURL } from 'url';
+import { resolve } from 'path';
 
 // Function to fetch Pokemon data from PokeAPI
 async function fetchPokemonData(pokemonId: number) {
@@ -11,6 +13,15 @@ async function fetchPokemonData(pokemonId: number) {
     console.error(`Error fetching Pokemon ${pokemonId}:`, error);
     return null;
   }
+}
+
+// Ejecutar el seed si este archivo es ejecutado directamente
+const isDirectRun =
+  !!process.argv[1] &&
+  import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+
+if (isDirectRun) {
+  seedPokemons().then(() => process.exit(0));
 }
 
 // Function to get Pokemon type in Spanish

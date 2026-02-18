@@ -1,5 +1,7 @@
-import { db } from "../config/firebase";
-import { Adoption, AdoptionStatus } from "../models/Adoption";
+import { pathToFileURL } from 'url';
+import { resolve } from 'path';
+import { db } from "../config/firebase.js";
+import { Adoption, AdoptionStatus } from "../models/Adoption.js";
 
 const adoptions: Partial<Adoption>[] = [
   {
@@ -83,6 +85,10 @@ const seedAdoptions = async () => {
 }
 
 // Ejecutar el seed si este archivo es ejecutado directamente
-if (import.meta.url === `file://${process.argv[1]}`) {
+const isDirectRun =
+  !!process.argv[1] &&
+  import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+
+if (isDirectRun) {
   seedAdoptions().then(() => process.exit(0));
 }
