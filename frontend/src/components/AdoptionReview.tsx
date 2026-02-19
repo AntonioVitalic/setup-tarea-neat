@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
-// import { useNavigate } from 'react-router-dom';
 import { adoptionsService } from '../services/adoptionsService';
 import { Adoption, AdoptionStatus, AdoptionStats } from '../types/adoption';
 
 const AdoptionReview: React.FC = () => {
-  // const navigate = useNavigate();
   const [adoptions, setAdoptions] = useState<Adoption[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
   useEffect(() => {
     loadAdoptions();
@@ -27,7 +26,34 @@ const AdoptionReview: React.FC = () => {
     }
   };
 
-  const formatDate = (dateString?: { _seconds: number, _nanoseconds: number }): string => {
+  const handleApprove = async (adoptionId: string): Promise<void> => {
+    try {
+      setActionLoadingId(adoptionId);
+      await adoptionsService.approveAdoption(adoptionId);
+      await loadAdoptions();
+    } catch (err: any) {
+      setError(err.error || 'Error al aprobar adopción');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleReject = async (adoptionId: string): Promise<void> => {
+    const reason = window.prompt('Motivo de rechazo:', 'Información insuficiente');
+    if (reason === null) return;
+
+    try {
+      setActionLoadingId(adoptionId);
+      await adoptionsService.rejectAdoption(adoptionId, reason);
+      await loadAdoptions();
+    } catch (err: any) {
+      setError(err.error || 'Error al rechazar adopción');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const formatDate = (dateString?: { _seconds: number; _nanoseconds: number }): string => {
     if (!dateString) return 'N/A';
     return new Date(dateString._seconds * 1000).toLocaleDateString('es-ES', {
       year: 'numeric',
@@ -51,31 +77,19 @@ const AdoptionReview: React.FC = () => {
     return statusMap[status] || status;
   };
 
-  const getStatusBadgeClass = (status: AdoptionStatus): string => {
-    return `status-badge status-${status}`;
-  };
+  const getStatusBadgeClass = (status: AdoptionStatus): string => `status-badge status-${status}`;
 
-  const getStats = (): AdoptionStats => {
-    const stats: AdoptionStats = {
-      total: adoptions.length,
-      pending: adoptions.filter(a => a.status === AdoptionStatus.PENDING).length,
-      under_review: adoptions.filter(a => a.status === AdoptionStatus.UNDER_REVIEW).length,
-      approved: adoptions.filter(a => a.status === AdoptionStatus.APPROVED).length
-    };
-    return stats;
-  };
-
-  // const handleImageError = (e: React.SyntheticEvent<HTMLImageElement, Event>): void => {
-  //   const target = e.target as HTMLImageElement;
-  //   target.src = 'https://via.placeholder.com/60x60/f0f0f0/999?text=🌟';
-  // };
+  const getStats = (): AdoptionStats => ({
+    total: adoptions.length,
+    pending: adoptions.filter((a) => a.status === AdoptionStatus.PENDING).length,
+    under_review: adoptions.filter((a) => a.status === AdoptionStatus.UNDER_REVIEW).length,
+    approved: adoptions.filter((a) => a.status === AdoptionStatus.APPROVED).length
+  });
 
   if (loading) {
     return (
       <div className="container">
-        <div className="loading">
-          Cargando adopciones...
-        </div>
+        <div className="loading">Cargando adopciones...</div>
       </div>
     );
   }
@@ -130,61 +144,67 @@ const AdoptionReview: React.FC = () => {
       ) : (
         <div className="adoptions-grid">
           {adoptions.map((adoption) => (
-            <div 
-              key={adoption.id} 
-              className="adoption-card"
-              style={{ cursor: 'pointer' }}
-            >
+            <div key={adoption.id} className="adoption-card">
               <div className="adoption-header">
+                {adoption.pokemonData?.imageUrl && (
+                  <img
+                    className="pokemon-image"
+                    src={adoption.pokemonData.imageUrl}
+                    alt={adoption.pokemonData.name}
+                  />
+                )}
                 <div className="pokemon-info">
-                  <h3>Pokemon ID: {adoption.pokemonId }</h3>
+                  <h3>{adoption.pokemonData?.name || `Pokemon ID: ${adoption.pokemonId}`}</h3>
+                  <p>
+                    {adoption.pokemonData
+                      ? `${adoption.pokemonData.type} • ${adoption.pokemonData.region}`
+                      : `ID: ${adoption.pokemonId}`}
+                  </p>
                 </div>
               </div>
 
               <div className="adoption-details">
-                <div className={getStatusBadgeClass(adoption.status)}>
-                  {getStatusText(adoption.status)}
-                </div>
+                <div className={getStatusBadgeClass(adoption.status)}>{getStatusText(adoption.status)}</div>
               </div>
 
               <div className="user-info">
                 <h4>Información del Adoptante</h4>
-                <div className="user-field">
-                  <strong>Nombre:</strong>
-                  <span>{adoption.userData?.name || 'N/A'}</span>
-                </div>
-                <div className="user-field">
-                  <strong>Email:</strong>
-                  <span>{adoption.userData?.email || 'N/A'}</span>
-                </div>
-                <div className="user-field">
-                  <strong>Teléfono:</strong>
-                  <span>{adoption.userData?.phone || 'N/A'}</span>
-                </div>
-                <div className="user-field">
-                  <strong>Región:</strong>
-                  <span>{adoption.userData?.region || 'N/A'}</span>
-                </div>
-                <div className="user-field">
-                  <strong>ID:</strong>
-                  <span>{adoption.userData?.idNumber || 'N/A'}</span>
-                </div>
+                <div className="user-field"><strong>Nombre:</strong><span>{adoption.userData?.name || 'N/A'}</span></div>
+                <div className="user-field"><strong>Email:</strong><span>{adoption.userData?.email || 'N/A'}</span></div>
+                <div className="user-field"><strong>Teléfono:</strong><span>{adoption.userData?.phone || 'N/A'}</span></div>
+                <div className="user-field"><strong>Región:</strong><span>{adoption.userData?.region || 'N/A'}</span></div>
+                <div className="user-field"><strong>ID:</strong><span>{adoption.userData?.idNumber || 'N/A'}</span></div>
               </div>
 
+              {(adoption.status === AdoptionStatus.UNDER_REVIEW || adoption.status === AdoptionStatus.PENDING) && (
+                <div className="actions-row">
+                  <button
+                    className="btn-approve"
+                    disabled={actionLoadingId === adoption.id}
+                    onClick={() => handleApprove(adoption.id)}
+                  >
+                    Aprobar
+                  </button>
+                  <button
+                    className="btn-reject"
+                    disabled={actionLoadingId === adoption.id}
+                    onClick={() => handleReject(adoption.id)}
+                  >
+                    Rechazar
+                  </button>
+                </div>
+              )}
+
               <div className="adoption-dates">
-                <p><strong>Fecha de Solicitud:</strong> {formatDate(adoption.createdAt as unknown as { _seconds: number, _nanoseconds: number })}</p>
+                <p><strong>Fecha de Solicitud:</strong> {formatDate(adoption.createdAt as unknown as { _seconds: number; _nanoseconds: number })}</p>
                 {adoption.reviewedAt && (
-                  <p><strong>Fecha de Revisión:</strong> {formatDate(adoption.reviewedAt as unknown as { _seconds: number, _nanoseconds: number })}</p>
+                  <p><strong>Fecha de Revisión:</strong> {formatDate(adoption.reviewedAt as unknown as { _seconds: number; _nanoseconds: number })}</p>
                 )}
                 {adoption.approvalDate && (
-                  <p><strong>Fecha de Aprobación:</strong> {formatDate(adoption.approvalDate as unknown as { _seconds: number, _nanoseconds: number })}</p>
+                  <p><strong>Fecha de Aprobación:</strong> {formatDate(adoption.approvalDate as unknown as { _seconds: number; _nanoseconds: number })}</p>
                 )}
-                {adoption.rejectionReason && (
-                  <p><strong>Razón de Rechazo:</strong> {adoption.rejectionReason}</p>
-                )}
-                {adoption.reviewedBy && (
-                  <p><strong>Revisado por:</strong> {adoption.reviewedBy}</p>
-                )}
+                {adoption.rejectionReason && <p><strong>Razón de Rechazo:</strong> {adoption.rejectionReason}</p>}
+                {adoption.reviewedBy && <p><strong>Revisado por:</strong> {adoption.reviewedBy}</p>}
               </div>
             </div>
           ))}

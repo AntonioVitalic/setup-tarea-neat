@@ -15,14 +15,6 @@ async function fetchPokemonData(pokemonId: number) {
   }
 }
 
-// Ejecutar el seed si este archivo es ejecutado directamente
-const isDirectRun =
-  !!process.argv[1] &&
-  import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
-
-if (isDirectRun) {
-  seedPokemons().then(() => process.exit(0));
-}
 
 // Function to get Pokemon type in Spanish
 function getSpanishType(types: any[]): string {
@@ -575,5 +567,14 @@ export async function seedPokemons() {
 
 // Ejecutar el seed si este archivo es ejecutado directamente
 if (import.meta.url === `file://${process.argv[1]}`) {
+  seedPokemons().then(() => process.exit(0));
+}
+
+// Ejecutar el seed si este archivo es ejecutado directamente
+const isDirectRun =
+  !!process.argv[1] &&
+  import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+
+if (isDirectRun) {
   seedPokemons().then(() => process.exit(0));
 }

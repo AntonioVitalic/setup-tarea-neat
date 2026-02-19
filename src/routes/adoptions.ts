@@ -2,6 +2,7 @@ import { Request, Response, Router } from 'express';
 import { db } from '../config/firebase.js';
 import { AdoptionStatus, UserData } from '../models/Adoption.js';
 import { getPokemons } from '../helpers/getPokemons.js';
+import { sendEmail } from '../services/emailService.js';
 
 const router = Router();
 
@@ -28,20 +29,19 @@ router.post('/v2', async (req: Request, res: Response) => {
   try {
     const { pokemonId, userData } = req.body;
 
-    if(!pokemonId || !userData) {
+    if (!pokemonId || !userData) {
       return res.status(400).json({ error: 'Pokemon ID and user data are required' });
     }
 
-    // Validar información mínima requerida
     const requiredFields: (keyof UserData)[] = ['name', 'email', 'phone', 'region', 'idNumber'];
-    const hasMinimumData = requiredFields.every(field => 
-      userData && userData[field] && userData[field].trim() !== ''
+    const hasMinimumData = requiredFields.every(
+      (field) => userData && userData[field] && userData[field].trim() !== ''
     );
 
+    const adoptionsRef = db.collection('adoptions');
+    const docRef = adoptionsRef.doc();
+
     if (!hasMinimumData) {
-      // Crear adopción rechazada sin notificar al usuario
-      const adoptionsRef = db.collection('adoptions');
-      const docRef = adoptionsRef.doc();
       await docRef.set({
         id: docRef.id,
         pokemonId,
@@ -52,13 +52,21 @@ router.post('/v2', async (req: Request, res: Response) => {
         rejectionReason: 'Información mínima requerida incompleta'
       });
 
-      return res.status(204).json({ message: 'Información mínima requerida incompleta' });
+      if (userData?.email) {
+        try {
+          await sendEmail(
+            userData.email,
+            `Tu solicitud de adopción para el Pokémon ${pokemonId} fue rechazada automáticamente por información mínima incompleta.`
+          );
+        } catch (e) {
+          console.error('Error enviando correo de rechazo automático:', e);
+        }
+      }
+
+      return res.status(200).json({ message: 'Información mínima requerida incompleta' });
     }
 
-    // Crear adopción en estado de revisión
-    const adoptionsRef = db.collection('adoptions');
-    const docRef = adoptionsRef.doc();
-    const adoption = await docRef.set({
+    await docRef.set({
       id: docRef.id,
       pokemonId,
       userData,
@@ -67,9 +75,18 @@ router.post('/v2', async (req: Request, res: Response) => {
       updatedAt: new Date()
     });
 
-    res.status(201).json({ 
+    try {
+      await sendEmail(
+        userData.email,
+        `Recibimos tu solicitud de adopción (ID: ${docRef.id}) para el Pokémon ${pokemonId}. Estado: En revisión.`
+      );
+    } catch (e) {
+      console.error('Error enviando correo de recepción:', e);
+    }
+
+    res.status(201).json({
       message: 'Solicitud de adopción creada exitosamente',
-      adoptionId: docRef.id 
+      adoptionId: docRef.id
     });
   } catch (error) {
     console.error('Error creating adoption request:', error);
@@ -92,16 +109,29 @@ router.get('/adoptable-pokemons', async (_req: Request, res: Response) => {
 router.get('/review', async (_req: Request, res: Response) => {
   try {
     const adoptionsRef = db.collection('adoptions');
-    const snapshot = await adoptionsRef
-      .orderBy('createdAt', 'desc')
-      .get();
+    const snapshot = await adoptionsRef.orderBy('createdAt', 'desc').get();
 
-    const adoptions = snapshot.docs.map(doc => ({
+    const adoptions = snapshot.docs.map((doc) => ({
       id: doc.id,
       ...doc.data()
+    })) as Array<{ id: string; pokemonId?: string; [key: string]: any }>;
+
+    const pokemonIds = [...new Set(adoptions.map((a) => a.pokemonId).filter(Boolean))] as string[];
+
+    const pokemonDocs = await Promise.all(
+      pokemonIds.map((pokemonId) => db.collection('pokemons').doc(pokemonId).get())
+    );
+
+    const pokemonById = new Map(
+      pokemonDocs.filter((d) => d.exists).map((d) => [d.id, d.data()])
+    );
+
+    const enriched = adoptions.map((adoption) => ({
+      ...adoption,
+      pokemonData: adoption.pokemonId ? pokemonById.get(adoption.pokemonId) || null : null
     }));
 
-    res.json(adoptions);
+    res.json(enriched);
   } catch (error) {
     console.error('Error fetching adoptions for review:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -115,12 +145,31 @@ router.put('/manage/:id/reject', async (req: Request, res: Response) => {
     const { rejectionReason } = req.body;
 
     const adoptionRef = db.collection('adoptions').doc(id);
+    const adoptionSnap = await adoptionRef.get();
+
+    if (!adoptionSnap.exists) {
+      return res.status(404).json({ error: 'Adopción no encontrada' });
+    }
+
+    const adoptionData = adoptionSnap.data() as { userData?: UserData; pokemonId?: string };
+
     await adoptionRef.update({
       status: AdoptionStatus.REJECTED,
-      rejectionReason,
+      rejectionReason: rejectionReason || 'No especificado',
       reviewedAt: new Date(),
       updatedAt: new Date()
     });
+
+    if (adoptionData.userData?.email) {
+      try {
+        await sendEmail(
+          adoptionData.userData.email,
+          `Tu solicitud de adopción (${id}) fue rechazada. Motivo: ${rejectionReason || 'No especificado'}.`
+        );
+      } catch (e) {
+        console.error('Error enviando correo de rechazo:', e);
+      }
+    }
 
     res.json({ message: 'Adopción rechazada exitosamente' });
   } catch (error) {
@@ -136,12 +185,31 @@ router.put('/manage/:id/approve', async (req: Request, res: Response) => {
     const { approvalDate } = req.body;
 
     const adoptionRef = db.collection('adoptions').doc(id);
+    const adoptionSnap = await adoptionRef.get();
+
+    if (!adoptionSnap.exists) {
+      return res.status(404).json({ error: 'Adopción no encontrada' });
+    }
+
+    const adoptionData = adoptionSnap.data() as { userData?: UserData; pokemonId?: string };
+
     await adoptionRef.update({
       status: AdoptionStatus.APPROVED,
       approvalDate: approvalDate || new Date(),
       reviewedAt: new Date(),
       updatedAt: new Date()
     });
+
+    if (adoptionData.userData?.email) {
+      try {
+        await sendEmail(
+          adoptionData.userData.email,
+          `¡Tu solicitud de adopción (${id}) fue aprobada! Pronto coordinaremos la entrega de tu Pokémon.`
+        );
+      } catch (e) {
+        console.error('Error enviando correo de aprobación:', e);
+      }
+    }
 
     res.json({ message: 'Adopción aprobada exitosamente' });
   } catch (error) {
